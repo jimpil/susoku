@@ -1,0 +1,117 @@
+(ns sudoku_solver.core
+  (:refer-clojure :exclude [==])
+  (:require [clojure.core.logic :refer :all] 
+            [clojure.core.logic.fd :as fd]
+            [clojure.pprint    :refer [pprint]]
+            [clojure.tools.cli :refer [cli]]))
+
+
+(defn init-board [vars puzzle]
+  (matche [vars puzzle]
+          ([[] []]
+             succeed)
+          ([[_ . more-vars] [0 . more-puzzle]]
+             (init-board more-vars more-puzzle))
+          ([[num . more-vars] [num . more-puzzle]]
+             (init-board more-vars more-puzzle))))
+
+
+(defn solve [puzzle]
+  (let [sdnum (fd/domain 1 2 3 4 5 6 7 8 9)
+        board (repeatedly 81 lvar)
+        rows (into [] (map vec (partition 9 board)))
+        cols (apply map vector rows)
+
+        get-square (fn [x y]
+                     (for [x (range x (+ x 3))
+                           y (range y (+ y 3))]
+                       (get-in rows [x y])))
+
+        squares (for [x (range 0 9 3)
+                      y (range 0 9 3)]
+                  (get-square x y))]
+
+    (run* [q] ;;return all solutions
+         (== q board)
+         (everyg #(fd/in % sdnum) board)
+         (init-board board puzzle)
+         (everyg fd/distinct rows)
+         (everyg fd/distinct cols)
+         (everyg fd/distinct squares))))
+         
+(def HELP_MESSAGE 
+  "A convenient Sudoku solver based on Clojure core.logic (respect to David Nolen). Optional switches include: ")         
+
+(defn -main  "Starts the solver."
+  [& args]
+ (let [[opts argus banner] 
+        (cli args
+      ["-h" "--help" "Show help/instructions." :flag true :default false]
+      ["-t" "--time" "Specify whether you want to time the solver or not." :flag true :default false]
+      ["-n" "--number" "Specify how many solutions you'dlike to get back." :default :all]
+      ["-p" "--puzzle" "REQUIRED: the sudoku puzzle you wish to solve as a sequence of 81 digits representing empty slots with 0."]
+      ["-f" "--file"  "The path to a file containing an arbitrary number of sudoku puzzles you wish to solve (e.g. \"/home/user/puzzles.txt\" ). These must be a 2d sequence."])
+      time-it? (:time opts)
+      file     (:file opts)
+      puzzle   (:puzzle opts)
+      puzzle  (cond-> puzzle 
+                 ((complement nil?) puzzle) read-string)
+      n        (:number opts)]
+   (assert (or (and file (not puzzle)) 
+               (and puzzle (not file))
+               (and (not puzzle) (not file)))   "INCOMPATIBLE SWITCHES DETECTED!\n Can either accept a puzzle OR a file of puzzles. Not both...")   
+  (when (:help opts)
+      (println HELP_MESSAGE "\n\n" banner)
+      (System/exit 0))
+  (when puzzle    
+   ((if time-it? #(time %&) identity)   
+    (condp = n
+      :all (->> puzzle solve (partition 9) doall pprint) 
+           (->> puzzle solve (take n) (partition 9) doall pprint)))
+     (System/exit 0))
+  (when file
+    (let [puzzles (-> file slurp read-string)
+          solutions (mapv (comp first solve) puzzles)]
+      (spit "solutions.txt" solutions)
+      (System/exit 0))) )) 
+          
+  
+ 
+  
+  
+  
+  
+  
+  
+;=============================================================
+
+;;sample puzzles:
+
+(def hardest 
+"According to http://www.telegraph.co.uk/science/science-news/9359579/Worlds-hardest-sudoku-can-you-crack-it.html"
+   [8 0 0 0 0 0 0 0 0
+    0 0 3 6 0 0 0 0 0
+    0 7 0 0 9 0 2 0 0
+    0 5 0 0 0 7 0 0 0
+    0 0 0 0 4 5 7 0 0
+    0 0 0 1 0 0 0 3 0
+    0 0 1 0 0 0 0 6 8
+    0 0 8 5 0 0 0 1 0
+    0 9 0 0 0 0 4 0 0]) ;; roughly 9 sec for 1 solution!!!   
+    
+;; (-> hardest solve doall time) 
+
+
+(def puzzle1 ;;MAN-UP facebook challenge for 5 pounds!
+   [8 0 6 5 0 0 0 0 0
+    0 0 4 0 0 0 0 0 8
+    0 0 0 0 0 0 6 0 0
+    0 0 0 0 0 0 0 0 0
+    3 7 0 4 5 0 0 0 0
+    5 0 1 0 9 8 0 0 7
+    0 0 0 0 0 7 0 2 0
+    2 5 7 1 6 0 0 0 9
+    0 8 0 0 3 0 0 4 0]) ;; 69 possible solutions
+
+
+  
